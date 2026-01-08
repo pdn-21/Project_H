@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:mysql1/mysql1.dart';
 import '../models/visit_model.dart';
 import '../models/database_settings.dart';
@@ -7,15 +8,23 @@ class DatabaseService {
   MySqlConnection? _sourceConnection;
   DatabaseSettings? _settings;
 
-  // * database settings
+  /// ตั้งค่า database settings
   void setSettings(DatabaseSettings settings) {
     _settings = settings;
   }
 
-  // * Connect Local Database
+  /// เชื่อมต่อ Local Database (MariaDB)
   Future<bool> connectLocalDatabase() async {
     try {
-      if (_settings == null) return false;
+      if (_settings == null) {
+        print('❌ Settings is null');
+        return false;
+      }
+
+      print('🔌 Connecting to Local Database...');
+      print('   Host: ${_settings!.localHost}:${_settings!.localPort}');
+      print('   Database: ${_settings!.localDatabase}');
+      print('   User: ${_settings!.localUsername}');
 
       final settings = ConnectionSettings(
         host: _settings!.localHost,
@@ -23,22 +32,44 @@ class DatabaseService {
         user: _settings!.localUsername,
         password: _settings!.localPassword,
         db: _settings!.localDatabase,
-        timeout: const Duration(seconds: 10),
+        timeout: const Duration(seconds: 30), // เพิ่ม timeout
       );
 
-      _localConnection = await MySqlConnection.connect(settings);
+      _localConnection = await MySqlConnection.connect(settings).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          print('❌ Local database connection timeout');
+          throw TimeoutException('Connection timeout');
+        },
+      );
+
       print('✅ Connected to Local Database');
       return true;
+    } on TimeoutException catch (e) {
+      print('❌ Local Database connection timeout: $e');
+      print('   กรุณาตรวจสอบ:');
+      print('   1. MariaDB กำลังทำงานอยู่หรือไม่');
+      print('   2. Host และ Port ถูกต้องหรือไม่');
+      print('   3. Firewall อนุญาตการเชื่อมต่อหรือไม่');
+      return false;
     } catch (e) {
       print('❌ Local Database connection failed: $e');
       return false;
     }
   }
 
-  // * Connect Source Database
+  /// เชื่อมต่อ Source Database (HOSXP)
   Future<bool> connectSourceDatabase() async {
     try {
-      if (_settings == null) return false;
+      if (_settings == null) {
+        print('❌ Settings is null');
+        return false;
+      }
+
+      print('🔌 Connecting to Source Database...');
+      print('   Host: ${_settings!.sourceHost}:${_settings!.sourcePort}');
+      print('   Database: ${_settings!.sourceDatabase}');
+      print('   User: ${_settings!.sourceUsername}');
 
       final settings = ConnectionSettings(
         host: _settings!.sourceHost,
@@ -46,22 +77,36 @@ class DatabaseService {
         user: _settings!.sourceUsername,
         password: _settings!.sourcePassword,
         db: _settings!.sourceDatabase,
-        timeout: const Duration(seconds: 10),
+        timeout: const Duration(seconds: 30),
       );
 
-      _sourceConnection = await MySqlConnection.connect(settings);
-      print('✅ Connected to Local Database');
+      _sourceConnection = await MySqlConnection.connect(settings).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          print('❌ Source database connection timeout');
+          throw TimeoutException('Connection timeout');
+        },
+      );
+
+      print('✅ Connected to Source Database');
       return true;
+    } on TimeoutException catch (e) {
+      print('❌ Source Database connection timeout: $e');
+      print('   กรุณาตรวจสอบ:');
+      print('   1. HOSXP Server กำลังทำงานอยู่หรือไม่');
+      print('   2. Network สามารถเชื่อมต่อได้หรือไม่');
+      print('   3. Username/Password ถูกต้องหรือไม่');
+      return false;
     } catch (e) {
-      print('❌ Local Database connection failed: $e');
+      print('❌ Source Database connection failed: $e');
       return false;
     }
   }
 
-  // * test local database connecting
+  /// ทดสอบการเชื่อมต่อ Local Database
   Future<bool> testLocalConnection(DatabaseSettings settings) async {
     try {
-      final conSettings = ConnectionSettings(
+      final connSettings = ConnectionSettings(
         host: settings.localHost,
         port: settings.localPort,
         user: settings.localUsername,
@@ -70,7 +115,7 @@ class DatabaseService {
         timeout: const Duration(seconds: 5),
       );
 
-      final conn = await MySqlConnection.connect(conSettings);
+      final conn = await MySqlConnection.connect(connSettings);
       await conn.close();
       return true;
     } catch (e) {
@@ -79,10 +124,10 @@ class DatabaseService {
     }
   }
 
-  // * test source database connecting
+  /// ทดสอบการเชื่อมต่อ Source Database
   Future<bool> testSourceConnection(DatabaseSettings settings) async {
     try {
-      final conSettings = ConnectionSettings(
+      final connSettings = ConnectionSettings(
         host: settings.sourceHost,
         port: settings.sourcePort,
         user: settings.sourceUsername,
@@ -91,7 +136,7 @@ class DatabaseService {
         timeout: const Duration(seconds: 5),
       );
 
-      final conn = await MySqlConnection.connect(conSettings);
+      final conn = await MySqlConnection.connect(connSettings);
       await conn.close();
       return true;
     } catch (e) {
@@ -100,7 +145,7 @@ class DatabaseService {
     }
   }
 
-  // * Create visit_list in Local Database
+  /// สร้างตาราง visit_list ใน Local Database
   Future<void> createVisitListTable() async {
     if (_localConnection == null) return;
 
@@ -112,8 +157,8 @@ class DatabaseService {
         hn VARCHAR(20),
         name VARCHAR(255),
         cid VARCHAR(13),
-        pttype VARCHAR(10),
         pttypename VARCHAR(100),
+        pttype VARCHAR(10),
         department VARCHAR(100),
         auth_code VARCHAR(50),
         close_seq VARCHAR(50),
@@ -145,7 +190,7 @@ class DatabaseService {
     }
   }
 
-  // * Sync From Source Database
+  /// ซิงค์ข้อมูลจาก Source Database
   Future<List<VisitModel>> syncVisitsFromSource(
       String fromDate, String toDate) async {
     if (_sourceConnection == null || _localConnection == null) {
@@ -155,6 +200,7 @@ class DatabaseService {
     final visits = <VisitModel>[];
 
     try {
+      // Query จาก Source Database (HOSXP)
       final results = await _sourceConnection!.query('''
         SELECT 
           (SELECT IF(vn IS NOT NULL, 'Y', 'N') FROM nhso_confirm_privilege WHERE vn = v.vn LIMIT 1) AS close_visit,
@@ -175,7 +221,7 @@ class DatabaseService {
         ORDER BY v.vn ASC
       ''', [fromDate, toDate]);
 
-      // * Transfer from source to local
+      // บันทึกลง Local Database
       for (var row in results) {
         final visit = VisitModel(
           vn: row['vn']?.toString() ?? '',
@@ -183,8 +229,8 @@ class DatabaseService {
           hn: row['hn']?.toString() ?? '',
           name: row['name']?.toString() ?? '',
           cid: row['cid']?.toString() ?? '',
-          pttype: row['pttype']?.toString() ?? '',
           pttypename: row['pttypename']?.toString(),
+          pttype: row['pttype']?.toString(),
           department: row['department']?.toString(),
           authCode: row['auth_code']?.toString(),
           closeSeq: row['close_seq']?.toString(),
@@ -207,7 +253,7 @@ class DatabaseService {
     return visits;
   }
 
-  // * บันทึกข้อมูล visit ลง Local Database
+  /// บันทึกข้อมูล visit ลง Local Database
   Future<void> saveVisit(VisitModel visit) async {
     if (_localConnection == null) return;
 

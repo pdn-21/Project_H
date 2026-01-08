@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/visit_model.dart';
 import '../models/database_settings.dart';
@@ -18,6 +19,8 @@ class VisitProvider extends ChangeNotifier {
   bool _isSourceDbConnected = false;
   bool _isNhsoApiConnected = false;
   String? _errorMessage;
+  int _syncProgress = 0;
+  int _syncTotal = 0;
 
   // Getters
   List<VisitModel> get visits => _visits;
@@ -28,6 +31,10 @@ class VisitProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   AppConfig get config => _config;
   DatabaseSettings get currentSettings => _config.settings;
+  int get syncProgress => _syncProgress;
+  int get syncTotal => _syncTotal;
+  double get syncPercentage =>
+      _syncTotal > 0 ? (_syncProgress / _syncTotal) : 0;
 
   /// Initialize Provider
   Future<void> initialize() async {
@@ -61,13 +68,28 @@ class VisitProvider extends ChangeNotifier {
   }
 
   /// ทดสอบการเชื่อมต่อ NHSO API
-  Future<void> testNhsoConnection() async {
+  Future<Map<String, dynamic>> testNhsoConnection() async {
     try {
-      _isNhsoApiConnected = await _apiService.testConnection();
+      final result = await _apiService.testConnection();
+      _isNhsoApiConnected = result['success'] ?? false;
+
+      if (!result['success']) {
+        _errorMessage = '${result['message']}\n${result['details']}';
+      } else {
+        _errorMessage = null;
+      }
+
       notifyListeners();
+      return result;
     } catch (e) {
       _errorMessage = 'NHSO API connection error: $e';
+      _isNhsoApiConnected = false;
       notifyListeners();
+      return {
+        'success': false,
+        'message': 'เกิดข้อผิดพลาด',
+        'details': e.toString(),
+      };
     }
   }
 
@@ -75,16 +97,34 @@ class VisitProvider extends ChangeNotifier {
   Future<void> syncData(String fromDate, String toDate) async {
     _isLoading = true;
     _errorMessage = null;
+    _syncProgress = 0;
+    _syncTotal = 0;
     notifyListeners();
 
     try {
-      _visits = await _dbService.syncVisitsFromSource(fromDate, toDate);
+      print('🔄 Starting data sync...');
+
+      _visits = await _dbService.syncVisitsFromSource(
+        fromDate,
+        toDate,
+      );
+
       _errorMessage = null;
+      print('✅ Sync completed: ${_visits.length} records');
+    } on TimeoutException catch (e) {
+      _errorMessage = 'หมดเวลาในการซิงค์ข้อมูล\n'
+          'กรุณาลองใช้ช่วงวันที่ที่สั้นกว่า\n'
+          'หรือตรวจสอบการเชื่อมต่อ Database';
+      _visits = [];
+      print('❌ Sync timeout: $e');
     } catch (e) {
       _errorMessage = 'Sync error: $e';
       _visits = [];
+      print('❌ Sync error: $e');
     } finally {
       _isLoading = false;
+      _syncProgress = 0;
+      _syncTotal = 0;
       notifyListeners();
     }
   }
@@ -126,14 +166,26 @@ class VisitProvider extends ChangeNotifier {
       int updated = 0;
 
       for (var visit in visitsWithoutEndpoint) {
+        // Format วันที่ให้เป็น yyyy-MM-dd
+        String formattedDate = visit.vstdate;
+
+        // ถ้า vstdate มี timestamp ให้ตัดออก
+        if (formattedDate.contains(' ')) {
+          formattedDate = formattedDate.substring(0, 10);
+        }
+
+        print(
+            '📝 Checking VN: ${visit.vn}, CID: ${visit.cid}, Date: $formattedDate');
+
         final claimCode = await _apiService.checkAuthenStatus(
           visit.cid,
-          visit.vstdate,
+          formattedDate, // ส่งวันที่ที่ format แล้ว
         );
 
         if (claimCode != null) {
           await _dbService.updateEndpoint(visit.vn, claimCode);
           updated++;
+          print('✅ Updated VN: ${visit.vn} with Claim Code: $claimCode');
         }
 
         // Delay เพื่อไม่ให้ API ถูก rate limit
@@ -143,9 +195,11 @@ class VisitProvider extends ChangeNotifier {
       // Reload data
       await loadVisits(fromDate, toDate);
 
-      _errorMessage = 'Updated $updated claim codes';
+      _errorMessage = 'อัปเดต Claim Code สำเร็จ $updated รายการ';
+      print('🎉 Updated $updated claim codes');
     } catch (e) {
       _errorMessage = 'Authen check error: $e';
+      print('❌ Authen check error: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -166,17 +220,40 @@ class VisitProvider extends ChangeNotifier {
   /// อัปเดตการตั้งค่า
   Future<bool> updateSettings(DatabaseSettings settings) async {
     try {
+      print('🔧 Updating settings...');
+      print('   Local Host: ${settings.localHost}');
+      print('   Source Host: ${settings.sourceHost}');
+      print('   NHSO URL: ${settings.nhsoApiUrl}');
+      print('   Has Token: ${settings.nhsoAccessToken.isNotEmpty}');
+
       final saved = await _config.saveSettings(settings);
 
       if (saved) {
-        _dbService.setSettings(settings);
-        _apiService.setSettings(settings);
-        await connectDatabases();
-        await testNhsoConnection();
-      }
+        print('✅ Settings saved to config');
 
-      return saved;
-    } catch (e) {
+        _dbService.setSettings(settings);
+        print('✅ Database service updated');
+
+        _apiService.setSettings(settings);
+        print('✅ API service updated');
+
+        await connectDatabases();
+        print('✅ Database connection attempted');
+
+        await testNhsoConnection();
+        print('✅ NHSO connection tested');
+
+        print('🎉 All settings updated successfully');
+        return true;
+      } else {
+        print('❌ Failed to save settings to config');
+        _errorMessage = 'ไม่สามารถบันทึกไฟล์ config ได้';
+        notifyListeners();
+        return false;
+      }
+    } catch (e, stackTrace) {
+      print('❌ Settings update error: $e');
+      print('   Stack trace: $stackTrace');
       _errorMessage = 'Settings update error: $e';
       notifyListeners();
       return false;
@@ -191,7 +268,14 @@ class VisitProvider extends ChangeNotifier {
     results['source'] = await _dbService.testSourceConnection(settings);
 
     _apiService.setSettings(settings);
-    results['nhso'] = await _apiService.testConnection();
+    final nhsoResult = await _apiService.testConnection();
+    results['nhso'] = nhsoResult['success'] ?? false;
+
+    // เก็บ error message จาก NHSO
+    if (!results['nhso']!) {
+      _errorMessage = '${nhsoResult['message']}\n${nhsoResult['details']}';
+      notifyListeners();
+    }
 
     return results;
   }

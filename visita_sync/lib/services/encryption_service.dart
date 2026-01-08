@@ -8,24 +8,24 @@ class EncryptionService {
   factory EncryptionService() => _instance;
   EncryptionService._internal();
 
-  // * Create key from password (encrypt config)
-  static const String _secretKey = '';
+  // สร้าง key จาก password (ใช้ในการเข้ารหัส config)
+  static const String _secretKey = 'HospitalVisitManager2024Secret!';
 
   late encrypt.Key _key;
   late encrypt.IV _iv;
 
   void initialize() {
-    // * Create 256-bit key from secret
+    // สร้าง 256-bit key จาก secret
     final keyBytes = sha256.convert(utf8.encode(_secretKey)).bytes;
     _key = encrypt.Key(Uint8List.fromList(keyBytes));
 
-    // * Create IV
+    // สร้าง IV
     final ivBytes =
         sha256.convert(utf8.encode(_secretKey.substring(0, 16))).bytes;
     _iv = encrypt.IV(Uint8List.fromList(ivBytes.sublist(0, 16)));
   }
 
-  // * encode text
+  /// เข้ารหัสข้อความ
   String encryptText(String plainText) {
     if (plainText.isEmpty) return '';
 
@@ -39,7 +39,7 @@ class EncryptionService {
     }
   }
 
-  // * decode text
+  /// ถอดรหัสข้อความ
   String decryptText(String encryptedText) {
     if (encryptedText.isEmpty) return '';
 
@@ -53,20 +53,47 @@ class EncryptionService {
     }
   }
 
-  // * encrypt JSON object
+  /// เข้ารหัส JSON object
   String encryptJson(Map<String, dynamic> data) {
-    final jsonString = json.encode(data);
-    return encryptText(jsonString);
+    try {
+      final jsonString = json.encode(data);
+      print('🔐 Encrypting JSON (${jsonString.length} chars)');
+
+      final encrypted = encryptText(jsonString);
+
+      if (encrypted.isEmpty) {
+        print('❌ Encryption returned empty string');
+      } else {
+        print('✅ Encryption successful (${encrypted.length} chars)');
+      }
+
+      return encrypted;
+    } catch (e) {
+      print('❌ JSON encryption error: $e');
+      return '';
+    }
   }
 
-  // * decrypt JSON object
+  /// ถอดรหัส JSON object
   Map<String, dynamic> decryptJson(String encryptedData) {
     try {
+      print('🔓 Decrypting JSON (${encryptedData.length} chars)');
+
       final decryptedString = decryptText(encryptedData);
-      if (decryptedString.isEmpty) return {};
-      return json.decode(decryptedString);
+
+      if (decryptedString.isEmpty) {
+        print('❌ Decryption returned empty string');
+        return {};
+      }
+
+      print('✅ Decryption successful (${decryptedString.length} chars)');
+
+      final decoded = json.decode(decryptedString);
+      print('✅ JSON parsing successful');
+
+      return decoded;
     } catch (e) {
-      print('JSON decryption error: $e');
+      print('❌ JSON decryption error: $e');
       return {};
     }
   }

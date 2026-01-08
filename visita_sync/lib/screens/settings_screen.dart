@@ -12,31 +12,31 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _formKey = GlobalKey<FormState>();
-
+  
   // Local Database Controllers
   final _localHostController = TextEditingController();
   final _localPortController = TextEditingController();
   final _localDatabaseController = TextEditingController();
   final _localUsernameController = TextEditingController();
   final _localPasswordController = TextEditingController();
-
+  
   // Source Database Controllers
   final _sourceHostController = TextEditingController();
   final _sourcePortController = TextEditingController();
   final _sourceDatabaseController = TextEditingController();
   final _sourceUsernameController = TextEditingController();
   final _sourcePasswordController = TextEditingController();
-
+  
   // NHSO API Controllers
   final _nhsoApiUrlController = TextEditingController();
   final _nhsoTokenHeaderController = TextEditingController();
   final _nhsoAccessTokenController = TextEditingController();
-
+  
   bool _isLocalPasswordVisible = false;
   bool _isSourcePasswordVisible = false;
   bool _isTokenVisible = false;
   bool _isTesting = false;
-
+  
   Map<String, bool> _testResults = {};
 
   @override
@@ -48,20 +48,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _loadCurrentSettings() {
     final provider = Provider.of<VisitProvider>(context, listen: false);
     final settings = provider.currentSettings;
-
+    
     if (provider.config.hasSettings) {
+      
       _localHostController.text = settings.localHost;
       _localPortController.text = settings.localPort.toString();
       _localDatabaseController.text = settings.localDatabase;
       _localUsernameController.text = settings.localUsername;
       _localPasswordController.text = settings.localPassword;
-
+      
       _sourceHostController.text = settings.sourceHost;
       _sourcePortController.text = settings.sourcePort.toString();
       _sourceDatabaseController.text = settings.sourceDatabase;
       _sourceUsernameController.text = settings.sourceUsername;
       _sourcePasswordController.text = settings.sourcePassword;
-
+      
       _nhsoApiUrlController.text = settings.nhsoApiUrl;
       _nhsoTokenHeaderController.text = settings.nhsoTokenHeader;
       _nhsoAccessTokenController.text = settings.nhsoAccessToken;
@@ -70,33 +71,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _testConnections() async {
     setState(() => _isTesting = true);
-
+    
     final settings = _buildSettings();
     final provider = Provider.of<VisitProvider>(context, listen: false);
-
+    
     final results = await provider.testConnections(settings);
-
+    
     setState(() {
       _testResults = results;
       _isTesting = false;
     });
-
+    
     _showTestResults(results);
   }
 
   void _showTestResults(Map<String, bool> results) {
+    final provider = Provider.of<VisitProvider>(context, listen: false);
+    final errorMsg = provider.errorMessage;
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('ผลการทดสอบการเชื่อมต่อ'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildResultRow('Local Database', results['local'] ?? false),
-            _buildResultRow('Source Database', results['source'] ?? false),
-            _buildResultRow('NHSO API', results['nhso'] ?? false),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildResultRow('Local Database', results['local'] ?? false),
+              _buildResultRow('Source Database', results['source'] ?? false),
+              _buildResultRow('NHSO API', results['nhso'] ?? false),
+              
+              if (errorMsg != null && errorMsg.isNotEmpty) ...[
+                const Divider(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.red[700], size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'รายละเอียด Error:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red[900],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        errorMsg,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              
+              const SizedBox(height: 16),
+              Text(
+                'คำแนะนำ:',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[800],
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildHintText('• ตรวจสอบว่า API URL ถูกต้อง'),
+              _buildHintText('• ตรวจสอบว่า Token ยังไม่หมดอายุ'),
+              _buildHintText('• ตรวจสอบว่า Token ขึ้นต้นด้วย "Bearer " หรือไม่'),
+              _buildHintText('• ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต'),
+              _buildHintText('• ลองใช้ Postman ทดสอบ API ก่อน'),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -104,6 +160,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('ปิด'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildHintText(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.grey[700],
+        ),
       ),
     );
   }
@@ -144,28 +213,201 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _saveSettings() async {
     if (_formKey.currentState!.validate()) {
-      final settings = _buildSettings();
-      final provider = Provider.of<VisitProvider>(context, listen: false);
+      // แสดง loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
 
-      final saved = await provider.updateSettings(settings);
-
-      if (saved) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ บันทึกการตั้งค่าสำเร็จ'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('❌ บันทึกการตั้งค่าไม่สำเร็จ'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      try {
+        final settings = _buildSettings();
+        final provider = Provider.of<VisitProvider>(context, listen: false);
+        
+        print('💾 Attempting to save settings...');
+        final saved = await provider.updateSettings(settings);
+        
+        // ปิด loading dialog
+        if (mounted) Navigator.pop(context);
+        
+        if (saved) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.white),
+                    SizedBox(width: 12),
+                    Text('✅ บันทึกการตั้งค่าสำเร็จ'),
+                  ],
+                ),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 3),
+              ),
+            );
+            Navigator.pop(context);
+          }
+        } else {
+          if (mounted) {
+            // แสดง error dialog แทน snackbar
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: Row(
+                  children: [
+                    Icon(Icons.error, color: Colors.red[700]),
+                    const SizedBox(width: 12),
+                    const Text('เกิดข้อผิดพลาด'),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('ไม่สามารถบันทึกการตั้งค่าได้'),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'สาเหตุที่เป็นไปได้:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildErrorReason('• ไม่มีสิทธิ์เข้าถึงโฟลเดอร์'),
+                    _buildErrorReason('• พื้นที่เก็บข้อมูลเต็ม'),
+                    _buildErrorReason('• ข้อมูลบางส่วนไม่ถูกต้อง'),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue[200]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.info_outline, 
+                                size: 16, 
+                                color: Colors.blue[700]
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'วิธีแก้ไข:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue[900],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            '1. ตรวจสอบว่ากรอกข้อมูลครบทุกช่อง\n'
+                            '2. ลองปิดและเปิดแอปใหม่\n'
+                            '3. ตรวจสอบว่ามีพื้นที่เพียงพอ\n'
+                            '4. รันแอปในโหมด Administrator',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('ปิด'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _saveSettings(); // ลองอีกครั้ง
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('ลองอีกครั้ง'),
+                  ),
+                ],
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        // ปิด loading dialog
+        if (mounted) Navigator.pop(context);
+        
+        print('❌ Save error: $e');
+        
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.error, color: Colors.red[700]),
+                  const SizedBox(width: 12),
+                  const Text('เกิดข้อผิดพลาดร้ายแรง'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('ไม่สามารถบันทึกการตั้งค่าได้'),
+                  const SizedBox(height: 16),
+                  Text(
+                    'รายละเอียด Error:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red[900],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: SelectableText(
+                      e.toString(),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('ปิด'),
+                ),
+              ],
+            ),
+          );
+        }
       }
     }
+  }
+
+  Widget _buildErrorReason(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 13,
+          color: Colors.grey[700],
+        ),
+      ),
+    );
   }
 
   @override
@@ -279,8 +521,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ? Icons.visibility
                         : Icons.visibility_off),
                     onPressed: () {
-                      setState(() =>
-                          _isLocalPasswordVisible = !_isLocalPasswordVisible);
+                      setState(() => _isLocalPasswordVisible = !_isLocalPasswordVisible);
                     },
                   ),
                 ),
@@ -360,8 +601,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ? Icons.visibility
                         : Icons.visibility_off),
                     onPressed: () {
-                      setState(() =>
-                          _isSourcePasswordVisible = !_isSourcePasswordVisible);
+                      setState(() => _isSourcePasswordVisible = !_isSourcePasswordVisible);
                     },
                   ),
                 ),
@@ -405,8 +645,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             labelText: 'SSO Access Token',
             prefixIcon: const Icon(Icons.vpn_key),
             suffixIcon: IconButton(
-              icon: Icon(
-                  _isTokenVisible ? Icons.visibility : Icons.visibility_off),
+              icon: Icon(_isTokenVisible
+                  ? Icons.visibility
+                  : Icons.visibility_off),
               onPressed: () {
                 setState(() => _isTokenVisible = !_isTokenVisible);
               },

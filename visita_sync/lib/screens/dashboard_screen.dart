@@ -292,16 +292,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildSyncButton() {
     return Consumer<VisitProvider>(
       builder: (context, provider, child) {
+        final isLoading = provider.isLoading;
+        final progress = provider.syncProgress;
+        final total = provider.syncTotal;
+        final percentage = provider.syncPercentage;
+
         return ElevatedButton.icon(
-          onPressed: provider.isLoading ? null : _syncData,
-          icon: provider.isLoading
+          onPressed: isLoading ? null : _syncData,
+          icon: isLoading
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
                 )
               : const Icon(Icons.sync),
-          label: const Text('Sync Data (HOSxP)'),
+          label: isLoading && total > 0
+              ? Text(
+                  'Syncing $progress/$total (${(percentage * 100).toStringAsFixed(0)}%)')
+              : const Text('Sync Data (HOSxP)'),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.blue,
             foregroundColor: Colors.white,
