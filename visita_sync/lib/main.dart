@@ -41,7 +41,7 @@ class MyApp extends StatelessWidget {
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
           useMaterial3: true,
-          fontFamily: 'Kanit', // ถ้ามีฟอนต์ไทย
+          fontFamily: 'IBMPlexSansThai', // ถ้ามีฟอนต์ไทย
           appBarTheme: const AppBarTheme(
             elevation: 0,
             centerTitle: false,

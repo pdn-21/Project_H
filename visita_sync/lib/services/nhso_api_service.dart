@@ -79,7 +79,7 @@ class NhsoApiService {
       print('🧪 Testing NHSO API Connection...');
 
       // ใช้เลขบัตรทดสอบ (13 หลัก)
-      final testCID = '1321200075612';
+      const testCID = '1321200075612';
 
       // Format วันที่เป็น yyyy-MM-dd
       final now = DateTime.now();
